@@ -129,7 +129,7 @@ export function buildUpsertQuery(
     sql += ` do update set ${updates.join(', ')}`
 
     if (primaryTimestampColumn) {
-        sql += ` where ${identPath([table, primaryTimestampColumn].join('.'))} >= excluded.${ident(
+        sql += ` where ${identPath([table, primaryTimestampColumn].join('.'))} <= excluded.${ident(
             primaryTimestampColumn
         )}`
     }
