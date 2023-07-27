@@ -86,6 +86,7 @@ export function buildUpsertQuery(
     data: StringKeyMap[],
     conflictColumns: string[],
     updateColumns: string[],
+    primaryTimestampColumn?: string,
     returning?: string | string[]
 ): QueryPayload {
     data = Array.isArray(data) ? data : [data]
@@ -125,8 +126,13 @@ export function buildUpsertQuery(
     for (const updateColName of updateColumns) {
         updates.push(`${ident(updateColName)} = excluded.${ident(updateColName)}`)
     }
-
     sql += ` do update set ${updates.join(', ')}`
+
+    if (primaryTimestampColumn) {
+        sql += ` where ${identPath([table, primaryTimestampColumn].join('.'))} >= excluded.${ident(
+            primaryTimestampColumn
+        )}`
+    }
 
     if (returning) {
         const isAll = returning === '*'
