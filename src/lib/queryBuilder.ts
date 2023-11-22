@@ -8,6 +8,8 @@ import {
 } from './types'
 import { ident, literal } from './pgFormat'
 import humps from './humps'
+import { SPEC_SCHEMA, CHAIN_ID_PROPERTY } from './constants'
+import { schemaForChainId } from './chains'
 
 const filterOpValues = new Set(Object.values(FilterOp))
 
@@ -25,12 +27,13 @@ export function buildSelectQuery(
     filters: Filters,
     options?: SelectOptions
 ): QueryPayload {
-    // Build initial select query.
-    const select = `select * from ${identPath(table)}`
-
-    // Type-check filters and handle case where empty.
     const filtersIsArray = Array.isArray(filters)
     const filtersIsObject = !filtersIsArray && typeof filters === 'object'
+    filters = (filtersIsArray ? filters : [filters]).filter((f) => !!f)
+    ;[table, filters] = detectSpecSchemaQuery(table, filters as StringKeyMap[])
+
+    // Build initial select query.
+    const select = `select * from ${identPath(table)}`
     if (
         !filters ||
         (filtersIsArray && !filters.length) ||
@@ -41,8 +44,6 @@ export function buildSelectQuery(
             bindings: [],
         }
     }
-
-    filters = filtersIsArray ? filters : [filters]
 
     // Make sure column names have been converted to snake_case.
     filters = filters.map((filter) => {
@@ -265,6 +266,37 @@ function removeAcronymFromCamel(val: string): string {
     }
 
     return formattedVal
+}
+
+function detectSpecSchemaQuery(table: string, filters: StringKeyMap[]): [string, StringKeyMap[]] {
+    const [schemaName, tableName] = table.split('.')
+    if (schemaName !== SPEC_SCHEMA) return [table, filters]
+
+    if (!filters.length) throw `Filters are required when querying the ${SPEC_SCHEMA} schema`
+
+    const chainId = filters[0][CHAIN_ID_PROPERTY]
+    if (!chainId) throw `No ${CHAIN_ID_PROPERTY} filter included with ${SPEC_SCHEMA} schema query`
+
+    const chainSchema = schemaForChainId[chainId.toString()]
+    if (!chainSchema) throw `No schema for chain id: ${chainId}`
+
+    const allFiltersHaveSameChainId = filters.every((f) => f[CHAIN_ID_PROPERTY] === chainId)
+    if (!allFiltersHaveSameChainId) {
+        throw `All filters must have equivalent ${CHAIN_ID_PROPERTY} properties`
+    }
+
+    const newFilters: StringKeyMap[] = []
+    for (const filter of filters as StringKeyMap[]) {
+        const newFilter = {}
+        for (const key in filter) {
+            if (key === CHAIN_ID_PROPERTY) continue
+            newFilter[key] = filter[key]
+        }
+        newFilters.push(newFilter)
+    }
+
+    table = [chainSchema, tableName].join('.')
+    return [table, newFilters]
 }
 
 function toSnakeCase(value: string): string {
