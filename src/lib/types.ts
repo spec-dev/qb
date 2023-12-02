@@ -43,6 +43,8 @@ export type SelectOptions = {
     orderBy?: OrderBy
     offset?: number
     limit?: number
+    chainId?: string
+    blockRange?: number[]
 }
 
 export type AuthOptions = {

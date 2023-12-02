@@ -11,6 +11,9 @@ import humps from './humps'
 import { SPEC_SCHEMA, CHAIN_ID_PROPERTY } from './constants'
 import { schemaForChainId } from './chains'
 
+const emptyResponseTable = 'ethereum.blocks'
+const emptyResponseFilters = [{ number: -1 }]
+
 const filterOpValues = new Set(Object.values(FilterOp))
 
 const identPath = (value: string): string =>
@@ -27,25 +30,25 @@ export function buildSelectQuery(
     filters: Filters,
     options?: SelectOptions
 ): QueryPayload {
+    const blockRange = options?.blockRange || []
     const filtersIsArray = Array.isArray(filters)
     const filtersIsObject = !filtersIsArray && typeof filters === 'object'
     filters = (filtersIsArray ? filters : [filters]).filter((f) => !!f)
-    ;[table, filters] = detectSpecSchemaQuery(table, filters as StringKeyMap[])
-
-    // Build initial select query.
+    ;[table, filters] = detectSpecSchemaQuery(table, filters as StringKeyMap[], options)
     const select = `select * from ${identPath(table)}`
-    if (
+
+    const filtersIsEmpty =
         !filters ||
         (filtersIsArray && !filters.length) ||
         (filtersIsObject && !Object.keys(filters).length)
-    ) {
+    if (filtersIsEmpty && !blockRange.length) {
         return {
             sql: addSelectOptionsToQuery(select, options),
             bindings: [],
         }
     }
 
-    // Make sure column names have been converted to snake_case.
+    // Convert column names to snake_case.
     filters = filters.map((filter) => {
         const formatted = {}
         for (const propertyName in filter) {
@@ -61,16 +64,31 @@ export function buildSelectQuery(
         const andStatement = buildAndStatement(inclusiveFilters, values, bindingIndex)
         andStatement?.length && orStatements.push(andStatement)
     }
-    if (!orStatements.length) {
+    if (!orStatements.length && !blockRange.length) {
         return {
             sql: addSelectOptionsToQuery(select, options),
             bindings: [],
         }
     }
 
-    const whereClause =
-        orStatements.length > 1 ? orStatements.map((s) => `(${s})`).join(' or ') : orStatements[0]
+    const whereGroups: string[] = []
+    if (blockRange.length === 2) {
+        const [startBlock, endBlock] = blockRange
+        whereGroups.push(
+            `block_number >= ${literal(startBlock)} and block_number <= ${literal(endBlock)}`
+        )
+    }
 
+    if (orStatements.length) {
+        whereGroups.push(
+            orStatements.length > 1
+                ? orStatements.map((s) => `(${s})`).join(' or ')
+                : orStatements[0]
+        )
+    }
+
+    const whereClause =
+        whereGroups.length > 1 ? whereGroups.map((s) => `(${s})`).join(' and ') : whereGroups[0]
     let sql = `${select} where ${whereClause}`
 
     return {
@@ -268,9 +286,24 @@ function removeAcronymFromCamel(val: string): string {
     return formattedVal
 }
 
-function detectSpecSchemaQuery(table: string, filters: StringKeyMap[]): [string, StringKeyMap[]] {
+function detectSpecSchemaQuery(
+    table: string,
+    filters: StringKeyMap[],
+    options?: SelectOptions
+): [string, StringKeyMap[]] {
     const [schemaName, tableName] = table.split('.')
+
+    // If not querying the spec schema, just treat things as normal.
     if (schemaName !== SPEC_SCHEMA) return [table, filters]
+
+    // If chain id is included in the options, use this chain id
+    // to choose the correct schema to query.
+    if (options?.chainId) {
+        const chainSchema = schemaForChainId[options.chainId.toString()]
+        if (!chainSchema) return [emptyResponseTable, emptyResponseFilters]
+        table = [chainSchema, tableName].join('.')
+        return [table, filters]
+    }
 
     if (!filters.length) throw `Filters are required when querying the ${SPEC_SCHEMA} schema`
 
@@ -278,7 +311,7 @@ function detectSpecSchemaQuery(table: string, filters: StringKeyMap[]): [string,
     if (!chainId) throw `No ${CHAIN_ID_PROPERTY} filter included with ${SPEC_SCHEMA} schema query`
 
     const chainSchema = schemaForChainId[chainId.toString()]
-    if (!chainSchema) throw `No schema for chain id: ${chainId}`
+    if (!chainSchema) return [emptyResponseTable, emptyResponseFilters]
 
     const allFiltersHaveSameChainId = filters.every((f) => f[CHAIN_ID_PROPERTY] === chainId)
     if (!allFiltersHaveSameChainId) {
