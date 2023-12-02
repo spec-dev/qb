@@ -72,11 +72,12 @@ export function buildSelectQuery(
     }
 
     const whereGroups: string[] = []
-    if (blockRange.length === 2) {
-        const [startBlock, endBlock] = blockRange
-        whereGroups.push(
-            `block_number >= ${literal(startBlock)} and block_number <= ${literal(endBlock)}`
-        )
+    if (blockRange.length) {
+        let blockRangeStatement = `block_number >= ${literal(blockRange[0])}`
+        if (blockRange.length > 1) {
+            blockRangeStatement += ` and block_number <= ${literal(blockRange[1])}`
+        }
+        whereGroups.push(blockRangeStatement)
     }
 
     if (orStatements.length) {
