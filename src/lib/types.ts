@@ -7,6 +7,8 @@ export type SpecTableClientOptions = {
 }
 
 export type QueryPayload = {
+    schemaName: string
+    tableName: string
     sql: string
     bindings: any[] | null
 }

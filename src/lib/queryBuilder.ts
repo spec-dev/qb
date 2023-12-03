@@ -35,6 +35,8 @@ export function buildSelectQuery(
     const filtersIsObject = !filtersIsArray && typeof filters === 'object'
     filters = (filtersIsArray ? filters : [filters]).filter((f) => !!f)
     ;[table, filters] = detectSpecSchemaQuery(table, filters as StringKeyMap[], options)
+    const [schemaName, tableName] = table.split('.')
+
     const select = `select * from ${identPath(table)}`
 
     const filtersIsEmpty =
@@ -43,6 +45,8 @@ export function buildSelectQuery(
         (filtersIsObject && !Object.keys(filters).length)
     if (filtersIsEmpty && !blockRange.length) {
         return {
+            schemaName,
+            tableName,
             sql: addSelectOptionsToQuery(select, options),
             bindings: [],
         }
@@ -66,6 +70,8 @@ export function buildSelectQuery(
     }
     if (!orStatements.length && !blockRange.length) {
         return {
+            schemaName,
+            tableName,
             sql: addSelectOptionsToQuery(select, options),
             bindings: [],
         }
@@ -93,6 +99,8 @@ export function buildSelectQuery(
     let sql = `${select} where ${whereClause}`
 
     return {
+        schemaName,
+        tableName,
         sql: addSelectOptionsToQuery(sql, options),
         bindings: values,
     }
@@ -112,6 +120,7 @@ export function buildUpsertQuery(
     data = Array.isArray(data) ? data : [data]
     const insertColNames = Object.keys(data[0]).sort()
     if (!insertColNames.length) throw 'No values to upsert'
+    const [schemaName, tableName] = table.split('.')
 
     let sql = `insert into ${identPath(table)} (${insertColNames
         .map(toSnakeCase)
@@ -138,7 +147,7 @@ export function buildUpsertQuery(
 
     if (!updateColumns.length) {
         sql += ' do nothing'
-        return { sql, bindings }
+        return { schemaName, tableName, sql, bindings }
     }
 
     updateColumns = updateColumns.map(toSnakeCase)
@@ -160,7 +169,7 @@ export function buildUpsertQuery(
         sql += ` returning ${isAll ? '*' : returning.map(toSnakeCase).map(ident).join(', ')}`
     }
 
-    return { sql, bindings }
+    return { schemaName, tableName, sql, bindings }
 }
 
 /**
