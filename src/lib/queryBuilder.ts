@@ -52,6 +52,11 @@ export function buildSelectQuery(
         }
     }
 
+    // Empty response query.
+    if (filters[0]?.number === -1 && options?.orderBy) {
+        options.orderBy = undefined
+    }
+
     // Convert column names to snake_case.
     filters = filters.map((filter) => {
         const formatted = {}
